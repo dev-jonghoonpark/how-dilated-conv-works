@@ -1,0 +1,1118 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Dilated Convolution 인터랙티브 교육 자료 — 풀링이 지우는 공간 정보, 커널에 간격을 넣는다는 발상, 지수적으로 자라는 수용 영역, 컨텍스트 모듈과 항등 초기화까지 브라우저에서 직접 실험 (Yu &amp; Koltun, ICLR 2016)">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%94%AD%3C/text%3E%3C/svg%3E">
+<meta charset="utf-8">
+<title>Dilated Convolution은 어떻게 풀링 없이 시야를 넓히는가 — 인터랙티브 노트</title>
+
+<style>
+/* ---------- tokens ---------- */
+:root {
+  color-scheme: light;
+  --bg: #f6f7f5;
+  --surface: #fdfdfc;
+  --surface2: #eff1ee;
+  --ink: #171a18;
+  --ink2: #565b57;
+  --muted: #898781;
+  --line: #e1e0d9;
+  --hairline: rgba(11,11,11,0.10);
+  --accent: #157a63;
+  --accent-soft: #ddeee7;
+  --accent-ink: #0d5c4a;
+  --code-bg: #eef1ee;
+  --s1: #2a78d6;          /* input / signal (blue) */
+  --s2: #eb6834;          /* kernel sample (orange) */
+  --s3: #8a5fd0;          /* comparison (purple) */
+  --good: #0ca30c;
+  --crit: #d03b3b;
+  --grid: #e1e0d9;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --bg: #0f1211;
+    --surface: #181c1a;
+    --surface2: #202522;
+    --ink: #edf0ed;
+    --ink2: #aab3ac;
+    --muted: #898781;
+    --line: #262b28;
+    --hairline: rgba(255,255,255,0.10);
+    --accent: #43c3a0;
+    --accent-soft: #14352c;
+    --accent-ink: #6fd7ba;
+    --code-bg: #141816;
+    --s1: #5b9cf0;
+    --s2: #e9743f;
+    --s3: #a583e2;
+    --grid: #2c2c2a;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f1211; --surface: #181c1a; --surface2: #202522;
+  --ink: #edf0ed; --ink2: #aab3ac; --muted: #898781;
+  --line: #262b28; --hairline: rgba(255,255,255,0.10);
+  --accent: #43c3a0; --accent-soft: #14352c; --accent-ink: #6fd7ba;
+  --code-bg: #141816; --s1: #5b9cf0; --s2: #e9743f; --s3: #a583e2; --grid: #2c2c2a;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f6f7f5; --surface: #fdfdfc; --surface2: #eff1ee;
+  --ink: #171a18; --ink2: #565b57; --muted: #898781;
+  --line: #e1e0d9; --hairline: rgba(11,11,11,0.10);
+  --accent: #157a63; --accent-soft: #ddeee7; --accent-ink: #0d5c4a;
+  --code-bg: #eef1ee; --s1: #2a78d6; --s2: #eb6834; --s3: #8a5fd0; --grid: #e1e0d9;
+}
+
+/* ---------- base ---------- */
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", Pretendard, "Segoe UI", "Noto Sans KR", "Malgun Gothic", sans-serif;
+  line-height: 1.72;
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+}
+main { max-width: 880px; margin: 0 auto; padding: 28px 20px 90px; }
+h1 { font-size: 1.72rem; line-height: 1.35; letter-spacing: -0.015em; margin: 8px 0 10px; }
+h2 { font-size: 1.28rem; letter-spacing: -0.01em; margin: 60px 0 12px; padding-top: 18px; border-top: 1px solid var(--line); }
+h3 { font-size: 1.04rem; margin: 26px 0 8px; }
+p { margin: 12px 0; }
+a { color: var(--accent-ink); }
+code {
+  background: var(--code-bg);
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-family: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.87em;
+}
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  line-height: 1.55;
+}
+pre code { background: none; padding: 0; }
+strong { font-weight: 700; }
+.lede { color: var(--ink2); font-size: 1.02rem; }
+.kicker {
+  display: inline-block; font-size: .78rem; font-weight: 700; letter-spacing: .08em;
+  color: var(--accent-ink); background: var(--accent-soft);
+  border-radius: 999px; padding: 3px 12px; margin-bottom: 6px;
+}
+.meta { color: var(--muted); font-size: .88rem; }
+.note {
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 10px 10px 0;
+  padding: 12px 16px;
+  margin: 18px 0;
+  font-size: .95rem;
+}
+.warn {
+  background: color-mix(in srgb, var(--crit) 8%, var(--surface));
+  border-left: 3px solid var(--crit);
+  border-radius: 0 10px 10px 0;
+  padding: 12px 16px;
+  margin: 18px 0;
+  font-size: .95rem;
+}
+.demo {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 20px;
+  margin: 20px 0;
+}
+.demo .demo-title { font-weight: 700; font-size: .95rem; margin-bottom: 4px; }
+.demo .demo-sub { color: var(--ink2); font-size: .87rem; margin-bottom: 14px; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin: 10px 0 14px; }
+.controls label { font-size: .88rem; color: var(--ink2); }
+button {
+  background: var(--surface2);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 7px 14px;
+  font-size: .9rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+input[type=range] { accent-color: var(--accent); vertical-align: middle; }
+.readout {
+  display: inline-block; min-width: 2.2em; text-align: center;
+  font-family: ui-monospace, Menlo, monospace; font-size: .9rem;
+  background: var(--code-bg); border-radius: 6px; padding: 1px 8px;
+}
+.stats { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.stat {
+  background: var(--surface2); border: 1px solid var(--line); border-radius: 10px;
+  padding: 8px 14px; font-size: .85rem; color: var(--ink2);
+}
+.stat b { display: block; font-size: 1.12rem; color: var(--ink); font-family: ui-monospace, Menlo, monospace; }
+.stat.hl { border-color: var(--accent); background: var(--accent-soft); }
+.stat.hl b { color: var(--accent-ink); }
+canvas.pix { image-rendering: pixelated; border: 1px solid var(--line); border-radius: 8px; background: var(--surface2); max-width: 100%; }
+.panelrow { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+.panel { text-align: center; }
+.panel .cap { font-size: .8rem; color: var(--ink2); margin-top: 6px; line-height: 1.4; }
+.scrollx { overflow-x: auto; }
+table.tbl { border-collapse: collapse; width: 100%; font-size: .88rem; margin: 14px 0; }
+table.tbl th, table.tbl td { border: 1px solid var(--line); padding: 6px 10px; text-align: center; }
+table.tbl th { background: var(--surface2); font-weight: 600; }
+table.tbl td.rowhead { text-align: left; font-weight: 600; background: var(--surface2); }
+table.tbl td.hl { background: var(--accent-soft); color: var(--accent-ink); font-weight: 700; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: .82rem; color: var(--ink2); margin-top: 8px; }
+.legend .sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+/* bars */
+.bars { display: grid; gap: 8px; margin: 14px 0; }
+.bar-row { display: grid; grid-template-columns: 180px 1fr 52px; gap: 10px; align-items: center; font-size: .86rem; }
+.bar-track { background: var(--surface2); border-radius: 6px; height: 20px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 6px; background: var(--s1); transition: width .5s ease; }
+.bar-fill.acc { background: var(--accent); }
+.bar-val { font-family: ui-monospace, Menlo, monospace; text-align: right; }
+@media (max-width: 560px) { .bar-row { grid-template-columns: 110px 1fr 48px; } }
+/* quiz */
+.quiz { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin: 18px 0; }
+.quiz .q { font-weight: 600; margin-bottom: 12px; }
+.quiz .opts { display: grid; gap: 8px; }
+.quiz .opts button { text-align: left; padding: 10px 14px; border-radius: 9px; font-size: .92rem; }
+.quiz .opts button.correct { border-color: var(--good); background: color-mix(in srgb, var(--good) 12%, var(--surface)); }
+.quiz .opts button.wrong { border-color: var(--crit); background: color-mix(in srgb, var(--crit) 10%, var(--surface)); }
+.quiz .expl { display: none; margin-top: 12px; font-size: .9rem; color: var(--ink2); border-top: 1px dashed var(--line); padding-top: 10px; }
+.quiz .expl.show { display: block; }
+.theme-toggle { position: fixed; top: 14px; right: 14px; z-index: 10; border-radius: 999px; padding: 6px 12px; font-size: .85rem; }
+.toc { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px 22px; margin: 22px 0; font-size: .92rem; }
+.toc ol { margin: 6px 0 2px; padding-left: 20px; }
+.toc li { margin: 3px 0; }
+footer { margin-top: 70px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
+</style>
+</head>
+<body>
+<button class="theme-toggle" id="themeToggle" aria-label="테마 전환">🌗 테마</button>
+<main>
+
+<span class="kicker">HOW AI WORKS</span>
+<h1>Dilated Convolution은 어떻게<br>풀링 없이 시야를 넓히는가</h1>
+<p class="lede">
+분류(classification)를 위해 태어난 CNN의 풀링은, 픽셀마다 라벨을 매겨야 하는
+분할(segmentation)에서는 정답의 위치 정보를 지워버립니다.
+Fisher Yu와 Vladlen Koltun은 커널을 키우지도, 해상도를 버리지도 않고
+<strong>커널 원소 사이에 간격을 넣는 것만으로</strong> 수용 영역을 지수적으로 넓혔습니다.
+이 페이지에서 그 원리를 브라우저에서 직접 실험해 봅니다.
+</p>
+<p class="meta">
+원 논문: <a href="https://arxiv.org/abs/1511.07122" target="_blank" rel="noopener">Multi-Scale Context Aggregation by Dilated Convolutions</a> (Yu &amp; Koltun, ICLR 2016)
+· 함께 읽기: Sutskever's List 3장 「ResNet 혁명」 §3.5
+</p>
+
+<div class="toc">
+<strong>차례</strong>
+<ol>
+<li><a href="#s1">문제 — 풀링은 밀집 예측의 정답을 지운다</a></li>
+<li><a href="#s2">기존 해법의 딜레마</a></li>
+<li><a href="#s3">발상 — 커널에 간격을 넣는다</a></li>
+<li><a href="#s4">수용 영역의 지수적 확장</a></li>
+<li><a href="#s5">컨텍스트 모듈 — 7층으로 255×255를 보는 설계</a></li>
+<li><a href="#s6">항등 초기화 — ResNet과 같은 논리</a></li>
+<li><a href="#s7">프런트엔드 단순화와 실험 결과</a></li>
+<li><a href="#s8">주의 — 격자 아티팩트(gridding effect)</a></li>
+<li><a href="#s9">정리 — 세 번 반복된 하나의 교훈</a></li>
+<li><a href="#s10">이해도 퀴즈</a></li>
+</ol>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="s1">§1 문제 — 풀링은 밀집 예측의 정답을 지운다</h2>
+
+<p>
+컴퓨터 비전 과제는 출력의 밀도로 나눌 수 있습니다.
+</p>
+<ul>
+<li><strong>희소 예측(sparse prediction)</strong> — 이미지당 라벨 하나. "이 사진은 고양이다." 공간 구조를 요약해도 됩니다.</li>
+<li><strong>밀집 예측(dense prediction)</strong> — 픽셀마다 라벨 하나. "이 픽셀은 고양이, 저 픽셀은 소파." 경계와 위치가 생명입니다.</li>
+</ul>
+<p>
+AlexNet·VGG 같은 분류망은 풀링과 스트라이드로 해상도를 단계적으로 줄이며 전역 정보를 모읍니다.
+분류에서는 미덕이지만, 밀집 예측에서 같은 백본을 재사용하면
+<strong>다운샘플링이 지운 위치 정보를 되살릴 방법이 없습니다.</strong>
+아래에서 직접 확인해 보세요 — 분할 마스크가 풀링을 거칠 때마다 어떻게 뭉개지는지.
+</p>
+
+<div class="demo">
+<div class="demo-title">데모 1 · 풀링이 분할 마스크를 뭉개는 과정</div>
+<div class="demo-sub">64×64 정답 마스크를 2×2 맥스 풀링으로 k번 줄였다가 다시 원래 크기로 확대(nearest)했을 때 남는 것. 분류망 백본은 보통 5번(1/32)까지 줄입니다.</div>
+<div class="controls">
+  <label>풀링 횟수 <input type="range" id="poolK" min="0" max="5" value="0" step="1"> <span class="readout" id="poolKv">0</span></label>
+  <span class="meta">해상도: <span class="readout" id="poolRes">64×64</span></span>
+</div>
+<div class="panelrow">
+  <div class="panel">
+    <canvas class="pix" id="poolSrc" width="64" height="64" style="width:192px;height:192px"></canvas>
+    <div class="cap">원본 마스크 (64×64)</div>
+  </div>
+  <div class="panel">
+    <canvas class="pix" id="poolDst" width="64" height="64" style="width:192px;height:192px"></canvas>
+    <div class="cap">풀링 후 복원한 마스크</div>
+  </div>
+</div>
+<div class="stats">
+  <div class="stat">경계 일치율(IoU)<b id="poolIou">100%</b></div>
+  <div class="stat">잃어버린 픽셀 수<b id="poolLost">0</b></div>
+</div>
+</div>
+
+<p>
+꼬리·귀·다리처럼 <strong>가는 구조부터 사라지는 것</strong>에 주목하세요.
+풀링을 5번 거치면 64×64 마스크가 2×2가 됩니다 — 어떤 업샘플링도 이 정보를 되살릴 수 없습니다.
+그런데 풀링을 그냥 빼버리면 이번에는 <strong>수용 영역(receptive field)</strong>이 문제가 됩니다.
+망이 각 픽셀 주변의 좁은 창밖에 못 보게 되어, "이 갈색 덩어리가 소파인지 개인지"를 판단할 문맥이 사라집니다.
+</p>
+
+<!-- ================================================================ -->
+<h2 id="s2">§2 기존 해법의 딜레마</h2>
+
+<p>넓은 시야(수용 영역)와 온전한 해상도를 동시에 얻는 기존 방법들은 각자 비용을 치릅니다.</p>
+
+<div class="scrollx">
+<table class="tbl">
+<tr><th>방법</th><th>수용 영역</th><th>치르는 비용</th></tr>
+<tr><td class="rowhead">커널을 키운다</td><td>커널 크기만큼</td><td>파라미터 폭증 — 3×3은 9개, 15×15는 225개로 <b>25배</b></td></tr>
+<tr><td class="rowhead">풀링 + 층 쌓기</td><td>지수적으로 커짐</td><td>해상도 손실 — §1에서 본 그대로</td></tr>
+<tr><td class="rowhead">일반 3×3만 쌓기</td><td>층당 +2 (<b>선형</b>)</td><td>255×255를 덮으려면 127층 필요</td></tr>
+<tr><td class="rowhead">이미지 여러 배율 입력</td><td>배율 수만큼</td><td>같은 이미지를 여러 번 처리 — 연산 중복, 설계 복잡</td></tr>
+</table>
+</div>
+
+<div class="demo">
+<div class="demo-title">데모 2 · 커널을 키우면 파라미터가 어떻게 늘어나는가</div>
+<div class="demo-sub">단일 층으로 k×k 시야를 얻으려 할 때의 파라미터 수 (채널 1 기준).</div>
+<div class="controls">
+  <label>커널 크기 <input type="range" id="kSize" min="3" max="31" value="3" step="2"> <span class="readout" id="kSizeV">3×3</span></label>
+</div>
+<div class="stats">
+  <div class="stat">파라미터 수<b id="kParams">9</b></div>
+  <div class="stat">3×3 대비<b id="kRatio">×1.0</b></div>
+  <div class="stat hl">같은 시야의 dilated 3×3<b>항상 9개</b></div>
+</div>
+</div>
+
+<p>
+이 딜레마의 답이 <strong>dilated convolution(확장 합성곱)</strong>입니다.
+커널의 원소 개수는 그대로 두고, <strong>원소를 읽는 위치만 벌리는</strong> 것입니다.
+</p>
+
+<!-- ================================================================ -->
+<h2 id="s3">§3 발상 — 커널에 간격을 넣는다</h2>
+
+<p>일반 합성곱과 확장 합성곱의 정의를 나란히 놓으면 차이는 문자 하나입니다.</p>
+
+<pre><code>일반 합성곱     (F ∗ k)(p)  = Σ_{s +  t = p} F(s) · k(t)
+확장 합성곱     (F ∗ₗ k)(p) = Σ_{s + l·t = p} F(s) · k(t)     ← 확장률 l</code></pre>
+
+<p>
+커널 좌표 <code>t</code>에 확장률 <code>l</code>을 곱해, 입력을 <code>l</code>칸 간격으로 띄엄띄엄 읽습니다.
+<code>l = 1</code>이면 정확히 보통의 합성곱입니다. 파라미터 수는 <code>l</code>과 <strong>무관</strong>합니다 —
+3×3 커널은 확장률이 얼마든 항상 9개의 가중치만 가집니다. 유효 커널 크기는:
+</p>
+
+<pre><code>k_eff = k + (k − 1)(d − 1)        예) 3×3, d=4  →  3 + 2·3 = 9×9 범위</code></pre>
+
+<div class="demo">
+<div class="demo-title">데모 3 · 확장률에 따라 커널이 읽는 위치</div>
+<div class="demo-sub">주황 점이 3×3 커널의 9개 가중치가 실제로 읽는 입력 위치입니다. 확장률을 바꿔 보세요 — 점의 개수(파라미터)는 변하지 않고 간격만 벌어집니다.</div>
+<div class="controls">
+  <span>확장률 d:</span>
+  <button class="dilBtn on" data-d="1">1</button>
+  <button class="dilBtn" data-d="2">2</button>
+  <button class="dilBtn" data-d="4">4</button>
+  <button class="dilBtn" data-d="8">8</button>
+</div>
+<div class="panelrow">
+  <div class="panel">
+    <canvas class="pix" id="dilCanvas" width="340" height="340" style="width:340px;height:340px"></canvas>
+    <div class="cap">33×33 입력 위의 3×3 커널 (중앙 출력 픽셀 기준)</div>
+  </div>
+  <div class="panel" style="flex:1;min-width:220px;text-align:left">
+    <div class="stats" style="flex-direction:column;align-items:stretch">
+      <div class="stat">파라미터 수<b id="dilParams">9</b></div>
+      <div class="stat">유효 커널 크기 k_eff<b id="dilKeff">3×3</b></div>
+      <div class="stat">덮는 면적<b id="dilArea">9칸 / 1089칸</b></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="note">
+<strong>용어 유래.</strong> 이 연산은 웨이블릿 분해의 <em>algorithme à trous</em>("구멍이 있는 알고리즘")에서 왔습니다.
+논문은 "구멍 뚫린 커널을 실제로 만드는 게 아니라 <strong>같은 커널을 다른 간격으로 적용하는 것</strong>"임을
+분명히 하려고 dilated convolution이라는 이름을 씁니다. 실제 구현도 0을 채운 큰 커널을 만들지 않고 읽기 위치만 바꿉니다.
+</div>
+
+<!-- ================================================================ -->
+<h2 id="s4">§4 수용 영역의 지수적 확장</h2>
+
+<p>
+확장 합성곱 한 층은 그저 "듬성듬성 보는 층"일 뿐입니다. 진짜 마법은 <strong>쌓을 때</strong> 일어납니다.
+확장률을 1, 2, 4, 8, …로 <strong>배로 늘리며 쌓으면</strong>, 앞 층이 이미 촘촘하게 모아 둔 정보를
+다음 층이 더 넓은 간격으로 모으므로 — 구멍 없이 — 수용 영역이 지수적으로 자랍니다.
+</p>
+
+<pre><code>F_{i+1} = F_i ∗_{2^i} k_i          (3×3 커널, i = 0, 1, 2, …)
+
+층 i+1의 원소 하나가 보는 입력 범위 = (2^{i+2} − 1) × (2^{i+2} − 1)
+→ 3×3, 7×7, 15×15, 31×31, 63×63, …</code></pre>
+
+<div class="demo">
+<div class="demo-title">데모 4 · 논문 Figure 1 재현 — 층을 쌓으며 수용 영역 관찰</div>
+<div class="demo-sub">출력 중앙 픽셀 하나가 입력의 어느 위치를 몇 번 참조하는지(기여 횟수)를 역추적한 열지도입니다. 진할수록 여러 경로로 참조되는 위치. dilated / 일반(모두 d=1)을 전환해 비교해 보세요.</div>
+<div class="controls">
+  <label>층 수 <input type="range" id="rfLayers" min="1" max="5" value="3" step="1"> <span class="readout" id="rfLayersV">3</span></label>
+  <button id="rfModeDil" class="on">dilated (d = 1,2,4,8,16)</button>
+  <button id="rfModePlain">일반 3×3 (d = 1,1,1,…)</button>
+</div>
+<div class="panelrow" id="rfPanels"></div>
+<div class="stats">
+  <div class="stat hl">수용 영역<b id="rfSize">15×15</b></div>
+  <div class="stat">총 파라미터<b id="rfParams">27</b></div>
+  <div class="stat">같은 시야를 일반 3×3로<b id="rfPlainNeed">7층 필요</b></div>
+</div>
+<div class="legend">
+  <span><span class="sw" style="background:var(--s1)"></span>기여 횟수 (진할수록 많음)</span>
+  <span><span class="sw" style="background:var(--s2)"></span>마지막 층 커널이 직접 읽는 9개 위치</span>
+</div>
+</div>
+
+<p>
+핵심 대비: 일반 3×3을 n층 쌓으면 수용 영역은 <code>2n+1</code>로 <strong>선형</strong> 증가합니다.
+255×255를 덮으려면 127층이 필요합니다. 확장률을 배로 늘리면 <strong>7층</strong>이면 됩니다.
+그동안 파라미터는 층당 9개(×채널)씩 선형으로만 늘어납니다.
+</p>
+
+<div class="demo">
+<div class="demo-title">데모 5 · 선형 vs 지수 — 층 수에 따른 수용 영역</div>
+<div class="demo-sub">같은 층 수에서 두 방식이 확보하는 수용 영역 한 변의 길이.</div>
+<div class="controls">
+  <label>층 수 <input type="range" id="cmpLayers" min="1" max="8" value="4" step="1"> <span class="readout" id="cmpLayersV">4</span></label>
+</div>
+<div class="bars" id="cmpBars"></div>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="s5">§5 컨텍스트 모듈 — 7층으로 255×255를 보는 설계</h2>
+
+<p>
+논문의 제안은 이 원리를 담은 <strong>컨텍스트 모듈(context module)</strong>입니다.
+C개의 특징 맵을 받아 C개를 그대로 내놓는 직육면체 모양의 모듈이라,
+<strong>어떤 밀집 예측 아키텍처에도 중간에 끼워 넣을 수 있습니다.</strong>
+풀링도 서브샘플링도 없습니다 — 해상도는 입구부터 출구까지 그대로입니다.
+</p>
+
+<div class="demo">
+<div class="demo-title">데모 6 · 컨텍스트 모듈 구조 (논문 Table 1)</div>
+<div class="demo-sub">층 카드에 마우스를 올리면(모바일: 탭) 해당 층까지의 수용 영역을 보여줍니다. Basic/Large는 채널 폭만 다릅니다.</div>
+<div class="controls">
+  <button id="ctxBasic" class="on">Basic (모두 C채널)</button>
+  <button id="ctxLarge">Large (점점 넓게)</button>
+</div>
+<div class="scrollx">
+<table class="tbl" id="ctxTable">
+<tr><th>층</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th></tr>
+<tr><td class="rowhead">합성곱</td><td>3×3</td><td>3×3</td><td>3×3</td><td>3×3</td><td>3×3</td><td>3×3</td><td>3×3</td><td>1×1</td></tr>
+<tr><td class="rowhead">확장률</td><td>1</td><td>1</td><td>2</td><td>4</td><td>8</td><td>16</td><td>1</td><td>1</td></tr>
+<tr id="ctxRf"><td class="rowhead">수용 영역</td><td>3×3</td><td>5×5</td><td>9×9</td><td>17×17</td><td>33×33</td><td>65×65</td><td>67×67</td><td>67×67</td></tr>
+<tr id="ctxCh"><td class="rowhead">출력 채널</td><td>C</td><td>C</td><td>C</td><td>C</td><td>C</td><td>C</td><td>C</td><td>C</td></tr>
+</table>
+</div>
+<div class="stats">
+  <div class="stat">총 파라미터 (Basic)<b>≈ 64C²</b></div>
+  <div class="stat">해상도 변화<b>없음</b></div>
+  <div class="stat" id="ctxHover">층에 마우스를 올려 보세요<b>—</b></div>
+</div>
+</div>
+
+<p>
+확장률이 16에서 멈추는 이유는 실용적입니다 — 실험의 프런트엔드가 64×64 특징 맵을 내놓기 때문에,
+65×65 수용 영역이면 이미 특징 맵 전체를 봅니다. 마지막의 d=1 3×3과 1×1 층은
+넓게 모은 정보를 지역적으로 다듬어 출력하는 역할입니다.
+</p>
+
+<!-- ================================================================ -->
+<h2 id="s6">§6 항등 초기화 — ResNet과 같은 논리</h2>
+
+<p>
+그런데 저자들이 이 모듈을 통상적인 무작위 초기화로 훈련하자 <strong>정확도가 오히려 떨어졌습니다.</strong>
+해법은 각 필터가 훈련 시작 시점에 <strong>입력을 그대로 통과시키도록</strong> 초기화하는 것이었습니다.
+</p>
+
+<pre><code>k^b(t, a) = 1_[t=0] · 1_[a=b]     — 중앙 원소만 1, 자기 채널만 복사 (항등 초기화)</code></pre>
+
+<div class="demo">
+<div class="demo-title">데모 7 · 무작위 초기화 vs 항등 초기화 — 신호는 살아남는가</div>
+<div class="demo-sub">1차원 신호(파랑)가 7개 층을 통과한 결과입니다. 무작위 가중치는 층마다 신호를 왜곡하고, 항등 초기화는 그대로 통과시킵니다. "다시 굴리기"로 다른 난수를 시험해 보세요.</div>
+<div class="controls">
+  <button id="initRand" class="on">무작위 초기화</button>
+  <button id="initIdent">항등 초기화</button>
+  <button id="initReroll">🎲 다시 굴리기</button>
+</div>
+<canvas id="initCanvas" width="800" height="300" style="width:100%;max-width:800px;border:1px solid var(--line);border-radius:8px;background:var(--surface2)"></canvas>
+<div class="legend">
+  <span><span class="sw" style="background:var(--s1)"></span>입력 신호</span>
+  <span><span class="sw" style="background:var(--s2)"></span>각 층 통과 후 (위→아래 = 층 1→7)</span>
+</div>
+</div>
+
+<p>
+항등 초기화 상태에서 학습은 "항등 사상으로부터의 <strong>작은 편차(잔차)를 찾는 문제</strong>"가 됩니다.
+어디서 본 구조 아닌가요? ResNet의 <code>y = F(x) + x</code>는 명시적인 skip 연결로 항등 경로를 만들고,
+컨텍스트 모듈은 <strong>가중치 자체를 항등으로 초기화</strong>해서 같은 효과를 냅니다.
+"아무것도 안 하는 상태에 갇히지 않을까"라는 우려와 달리, 역전파는 곧바로 문맥 정보를 활용하도록
+가중치를 조정해 나갔습니다.
+</p>
+
+<div class="note">
+<strong>3장을 관통하는 주제.</strong> Sutskever's List 3장에서 이 논리는 세 번 반복됩니다 —
+① ResNet의 잔차 연결(<code>F(x) = 0</code>이면 항등), ② ResNet v2의 pre-activation(덧셈 뒤 ReLU 제거로 순수한 항등 경로 확보),
+③ dilated conv의 항등 초기화. 형태는 다르지만 결론은 하나입니다:
+<strong>좋은 최적화는 항등 사상 근처에서 시작한다.</strong>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="s7">§7 프런트엔드 단순화와 실험 결과</h2>
+
+<p>
+논문의 두 번째 기여는 덜 알려졌지만 똑같이 중요합니다.
+당시 분할 시스템들은 VGG-16 같은 <strong>분류망을 개조해</strong> 쓰고 있었는데,
+저자들은 분류용으로 설계된 흔적 기관(vestigial components)을 걷어냈습니다.
+</p>
+<ul>
+<li>마지막 두 풀링·스트라이드 층을 <strong>완전히 제거</strong> (Long et al.은 유지했고, Chen et al.은 풀링은 남겼습니다)</li>
+<li>제거된 풀링 하나당 이후 층의 합성곱 확장률을 2배로 — 원래 학습된 가중치를 그대로 쓰면서 고해상도 출력</li>
+<li>중간 특징 맵의 패딩 제거 — 분류에는 있었지만 밀집 예측에는 불필요</li>
+</ul>
+<p>
+이렇게 <strong>단순해진</strong> 프런트엔드만으로 기존 선도 모델들을 5%p 이상 앞섰습니다 (PASCAL VOC 2012 test, mean IoU):
+</p>
+
+<div class="demo">
+<div class="demo-title">결과 1 · 프런트엔드 비교 — 단순한 쪽이 더 정확하다</div>
+<div class="bars">
+  <div class="bar-row"><span>FCN-8s (Long et al.)</span><div class="bar-track"><div class="bar-fill" data-w="62.2" data-max="80"></div></div><span class="bar-val">62.2</span></div>
+  <div class="bar-row"><span>DeepLab (Chen et al.)</span><div class="bar-track"><div class="bar-fill" data-w="62.1" data-max="80"></div></div><span class="bar-val">62.1</span></div>
+  <div class="bar-row"><span>DeepLab-Msc</span><div class="bar-track"><div class="bar-fill" data-w="62.9" data-max="80"></div></div><span class="bar-val">62.9</span></div>
+  <div class="bar-row"><span><strong>단순화한 프런트엔드</strong></span><div class="bar-track"><div class="bar-fill acc" data-w="67.6" data-max="80"></div></div><span class="bar-val"><strong>67.6</strong></span></div>
+</div>
+<div class="demo-sub">CRF 후처리를 쓴 DeepLab+CRF(66.4)보다도 후처리 없이 1%p 이상 높았습니다.</div>
+</div>
+
+<div class="demo">
+<div class="demo-title">결과 2 · 컨텍스트 모듈을 끼우면 어디서든 정확도가 오른다</div>
+<div class="bars">
+  <div class="bar-row"><span>프런트엔드만</span><div class="bar-track"><div class="bar-fill" data-w="71.3" data-max="80"></div></div><span class="bar-val">71.3</span></div>
+  <div class="bar-row"><span>+ 컨텍스트 모듈</span><div class="bar-track"><div class="bar-fill acc" data-w="73.5" data-max="80"></div></div><span class="bar-val">73.5</span></div>
+  <div class="bar-row"><span>+ 컨텍스트 + CRF</span><div class="bar-track"><div class="bar-fill acc" data-w="74.7" data-max="80"></div></div><span class="bar-val">74.7</span></div>
+  <div class="bar-row"><span>+ 컨텍스트 + CRF-RNN</span><div class="bar-track"><div class="bar-fill acc" data-w="75.3" data-max="80"></div></div><span class="bar-val">75.3</span></div>
+</div>
+<div class="demo-sub">VOC-2012 test set, mean IoU. COCO 추가 학습 포함. 컨텍스트 모듈은 구조적 예측(CRF)과 경쟁하지 않고 <strong>시너지</strong>를 냅니다 — 어느 조합에 끼워도 정확도가 올랐습니다.</div>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="s8">§8 주의 — 격자 아티팩트(gridding effect)</h2>
+
+<p>
+확장률을 아무렇게나 쌓으면 안 됩니다. <strong>같은 확장률을 반복하면</strong> 커널이 계속 같은
+간격의 위치만 읽어서, 수용 영역 안에 <strong>한 번도 참조되지 않는 픽셀</strong>이 격자 무늬로 남습니다.
+</p>
+
+<div class="demo">
+<div class="demo-title">데모 8 · 확장률 조합에 따른 입력 커버리지</div>
+<div class="demo-sub">3개 층을 통과한 출력 픽셀 하나의 기여 지도. 회색 = 수용 영역 안이지만 한 번도 참조되지 않는 구멍.</div>
+<div class="controls">
+  <button class="gridBtn on" data-ds="1,2,4">d = 1, 2, 4 (논문 방식)</button>
+  <button class="gridBtn" data-ds="2,2,2">d = 2, 2, 2 (같은 확장률 반복)</button>
+  <button class="gridBtn" data-ds="4,4,4">d = 4, 4, 4</button>
+</div>
+<div class="panelrow">
+  <div class="panel">
+    <canvas class="pix" id="gridCanvas" width="310" height="310" style="width:310px;height:310px"></canvas>
+    <div class="cap" id="gridCap">확장률 1, 2, 4 — 구멍 없음</div>
+  </div>
+  <div class="panel" style="flex:1;min-width:220px;text-align:left">
+    <div class="stats" style="flex-direction:column;align-items:stretch">
+      <div class="stat">수용 영역 내 참조된 픽셀<b id="gridCov">100%</b></div>
+      <div class="stat">구멍(미참조) 픽셀<b id="gridHoles">0</b></div>
+    </div>
+    <p class="meta" style="margin-top:12px">확장률을 1부터 배로 늘리면 앞 층이 메운 간격을 다음 층이 정확히 이어받아 구멍이 생기지 않습니다. 이후 연구들(HDC, ASPP 등)은 확장률을 서로소로 섞거나 조합해 이 문제를 다뤘습니다.</p>
+  </div>
+</div>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="s9">§9 정리 — 세 번 반복된 하나의 교훈</h2>
+
+<div class="scrollx">
+<table class="tbl">
+<tr><th style="width:26%">항목</th><th>내용</th></tr>
+<tr><td class="rowhead">핵심 아이디어</td><td style="text-align:left">커널 원소 사이에 간격(확장률)을 넣고, 확장률을 배로 늘리며 쌓는다. 수용 영역은 <b>지수적으로</b>, 파라미터는 <b>선형으로</b> 자라고, 해상도는 전혀 잃지 않는다.</td></tr>
+<tr><td class="rowhead">수식 한 줄</td><td style="text-align:left"><code>(F ∗ₗ k)(p) = Σ_{s+l·t=p} F(s)k(t)</code>, 수용 영역 <code>(2^{i+2}−1)²</code></td></tr>
+<tr><td class="rowhead">두 가지 기여</td><td style="text-align:left">① 어디에나 끼울 수 있는 컨텍스트 모듈 ② 분류망의 흔적 기관을 걷어낸 더 단순하고 더 정확한 프런트엔드</td></tr>
+<tr><td class="rowhead">핵심 수치</td><td style="text-align:left">프런트엔드만으로 VOC-2012 test 67.6 mIoU (기존 대비 +5%p), 컨텍스트 모듈 추가 시 75.3까지</td></tr>
+<tr><td class="rowhead">이후 영향</td><td style="text-align:left">DeepLab의 ASPP, WaveNet의 dilated causal conv, TCN 등 — "해상도를 지키며 시야를 넓히는" 표준 도구가 됨</td></tr>
+</table>
+</div>
+
+<p>
+3장의 렌즈로 보면 이 논문의 메시지는 ResNet과 정확히 같습니다.
+잔차 연결도, pre-activation도, dilated convolution도 <strong>새로운 개념의 도약이 아니라
+기존 것의 정밀한 재배치</strong>였습니다. 합성곱의 정의에서 문자 하나(<code>l</code>)를 바꾸고,
+초기화를 항등 사상에 놓았을 뿐인데 — 밀집 예측의 판도가 바뀌었습니다.
+<strong>아이디어의 중요성은 복잡성과 비례하지 않습니다.</strong>
+</p>
+
+<!-- ================================================================ -->
+<h2 id="s10">§10 이해도 퀴즈</h2>
+
+<div class="quiz" data-answer="1">
+<div class="q">Q1. 확장률(dilation) d를 1에서 8로 올리면 3×3 커널의 파라미터 수는?</div>
+<div class="opts">
+<button>64배로 늘어난다</button>
+<button>변하지 않는다 — 항상 9개</button>
+<button>8배로 늘어난다</button>
+<button>유효 커널 크기의 제곱만큼 늘어난다</button>
+</div>
+<div class="expl">확장률은 커널 원소를 <b>읽는 위치의 간격</b>만 바꿉니다. 가중치 개수는 커널 크기(3×3 = 9)로 고정입니다. 이것이 큰 커널 대비 dilated conv의 결정적 이점입니다.</div>
+</div>
+
+<div class="quiz" data-answer="2">
+<div class="q">Q2. 3×3 커널을 확장률 1, 2, 4, …, 2^i로 쌓을 때 수용 영역이 지수적으로 자라는 이유는?</div>
+<div class="opts">
+<button>층이 깊어질수록 커널 파라미터가 지수적으로 늘어서</button>
+<button>풀링이 해상도를 절반씩 줄여서</button>
+<button>앞 층이 촘촘히 모은 정보를 다음 층이 두 배 간격으로 다시 모으므로, 간격을 벌려도 구멍이 없어서</button>
+<button>ReLU가 신호를 증폭해서</button>
+</div>
+<div class="expl">층 i의 출력 한 점은 이미 (2^{i+1}−1)² 범위를 요약하고 있습니다. 다음 층이 2^i 간격으로 9개 점을 읽으면 요약된 범위들이 정확히 이어 붙어, 구멍 없이 (2^{i+2}−1)²로 커집니다. 풀링도 파라미터 증가도 필요 없습니다.</div>
+</div>
+
+<div class="quiz" data-answer="0">
+<div class="q">Q3. 컨텍스트 모듈이 무작위 초기화로는 훈련에 실패한 문제를 저자들은 어떻게 해결했나?</div>
+<div class="opts">
+<button>각 필터가 입력을 그대로 통과시키는 항등 초기화</button>
+<button>학습률을 100배로 올림</button>
+<button>배치 정규화 층 추가</button>
+<button>모듈에 풀링 층을 다시 넣음</button>
+</div>
+<div class="expl"><code>k^b(t,a) = 1_[t=0]·1_[a=b]</code> — 훈련 시작 시 모든 층이 항등 사상이 되게 초기화했습니다. 학습은 항등으로부터의 작은 편차(잔차)를 찾는 문제가 됩니다. ResNet의 skip 연결과 같은 논리를 가중치로 구현한 셈입니다.</div>
+</div>
+
+<div class="quiz" data-answer="3">
+<div class="q">Q4. 저자들의 프런트엔드가 FCN-8s와 DeepLab을 5%p 이상 앞선 방법의 요지는?</div>
+<div class="opts">
+<button>더 깊은 백본(ResNet-152)으로 교체</button>
+<button>훈련 데이터를 10배로 늘림</button>
+<button>CRF 후처리를 더 정교하게 튜닝</button>
+<button>분류용 설계의 흔적(마지막 풀링들, 중간 패딩)을 제거하고 dilation으로 보상 — 더 단순하게 만듦</button>
+</div>
+<div class="expl">마지막 두 풀링·스트라이드 층을 제거하고, 제거된 풀링당 이후 합성곱의 확장률을 2배로 올려 학습된 가중치를 그대로 재사용했습니다. 복잡한 추가가 아니라 <b>단순화가</b> 정확도를 올렸다는 점이 이 논문의 반전입니다.</div>
+</div>
+
+<div class="quiz" data-answer="2">
+<div class="q">Q5. 확장률 2, 2, 2처럼 같은 확장률만 반복해 쌓으면 생기는 문제는?</div>
+<div class="opts">
+<button>파라미터가 지수적으로 폭증한다</button>
+<button>해상도가 절반으로 줄어든다</button>
+<button>수용 영역 안에 한 번도 참조되지 않는 픽셀이 격자 무늬로 남는다 (gridding effect)</button>
+<button>기울기가 소실된다</button>
+</div>
+<div class="expl">커널이 항상 같은 간격의 위치만 읽으므로 그 사이 픽셀은 어떤 경로로도 출력에 기여하지 못합니다. 데모 8에서 본 회색 구멍이 그것입니다. 확장률을 1부터 배로 늘리거나(논문), 서로소 조합을 쓰면(HDC) 피할 수 있습니다.</div>
+</div>
+
+<footer>
+<p>
+참고 자료 —
+Fisher Yu &amp; Vladlen Koltun, <a href="https://arxiv.org/abs/1511.07122" target="_blank" rel="noopener">Multi-Scale Context Aggregation by Dilated Convolutions</a>, ICLR 2016 ·
+Sutskever's List 3장 「ResNet 혁명」 §3.5 밀집 예측으로의 확장.
+</p>
+<p>
+이 페이지는 <a href="https://github.com/dev-jonghoonpark/how-ai-works" target="_blank" rel="noopener">how-ai-works</a> 시리즈의 일부입니다.
+모든 계산(풀링, 수용 영역 역추적, 신호 전파)은 페이지 안의 순수 JavaScript로 수행됩니다 — 외부 라이브러리·서버 없음.
+</p>
+</footer>
+
+</main>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+/* ---------- theme ---------- */
+$("themeToggle").addEventListener("click", () => {
+  const r = document.documentElement;
+  const cur = r.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  r.dataset.theme = cur === "dark" ? "light" : "dark";
+  drawAll();
+});
+
+/* ================================================================
+   Demo 1 — pooling destroys a segmentation mask
+================================================================ */
+// 64x64 cat-ish silhouette mask (body + head + ears + tail + legs)
+function makeMask() {
+  const N = 64, m = new Uint8Array(N * N);
+  const set = (x, y) => { if (x >= 0 && x < N && y >= 0 && y < N) m[y * N + x] = 1; };
+  // body: ellipse
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const dx = (x - 34) / 15, dy = (y - 40) / 10;
+    if (dx * dx + dy * dy <= 1) set(x, y);
+  }
+  // head: circle
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const dx = (x - 16) / 7.5, dy = (y - 27) / 7.5;
+    if (dx * dx + dy * dy <= 1) set(x, y);
+  }
+  // ears: triangles
+  for (let i = 0; i < 7; i++) for (let j = 0; j <= i; j++) { set(10 + j, 21 - (6 - i)); set(21 - j, 21 - (6 - i)); }
+  // tail: thin curve
+  for (let t = 0; t <= 40; t++) {
+    const a = t / 40, x = Math.round(48 + 10 * Math.sin(a * 2.6)), y = Math.round(42 - 22 * a);
+    set(x, y); set(x + 1, y);
+  }
+  // legs: thin rectangles
+  for (const lx of [24, 30, 38, 44]) for (let y = 47; y < 58; y++) { set(lx, y); set(lx + 1, y); }
+  return m;
+}
+const MASK = makeMask();
+
+function poolAndRestore(mask, k) {
+  const N = 64;
+  let cur = mask, size = N;
+  for (let i = 0; i < k; i++) {
+    const ns = size >> 1, nx = new Uint8Array(ns * ns);
+    for (let y = 0; y < ns; y++) for (let x = 0; x < ns; x++) {
+      nx[y * ns + x] = Math.max(
+        cur[(2 * y) * size + 2 * x], cur[(2 * y) * size + 2 * x + 1],
+        cur[(2 * y + 1) * size + 2 * x], cur[(2 * y + 1) * size + 2 * x + 1]);
+    }
+    cur = nx; size = ns;
+  }
+  // nearest upsample back to 64
+  const out = new Uint8Array(N * N), f = N / size;
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++)
+    out[y * N + x] = cur[Math.floor(y / f) * size + Math.floor(x / f)];
+  return { out, size };
+}
+
+function drawMask(canvas, mask, ref) {
+  const ctx = canvas.getContext("2d"), N = 64;
+  const img = ctx.createImageData(N, N);
+  const fg = hexToRgb(css("--s1")), bg = hexToRgb(css("--surface2"));
+  const bad = hexToRgb(css("--crit"));
+  for (let i = 0; i < N * N; i++) {
+    let c = mask[i] ? fg : bg;
+    if (ref && mask[i] !== ref[i]) c = bad;         // diff highlight
+    img.data[4 * i] = c[0]; img.data[4 * i + 1] = c[1]; img.data[4 * i + 2] = c[2]; img.data[4 * i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+function hexToRgb(h) {
+  h = h.replace("#", "");
+  if (h.length === 3) h = h.split("").map(c => c + c).join("");
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+
+function updatePool() {
+  const k = +$("poolK").value;
+  $("poolKv").textContent = k;
+  const { out, size } = poolAndRestore(MASK, k);
+  $("poolRes").textContent = size + "×" + size;
+  drawMask($("poolSrc"), MASK);
+  drawMask($("poolDst"), out, MASK);
+  let inter = 0, uni = 0, lost = 0;
+  for (let i = 0; i < MASK.length; i++) {
+    if (MASK[i] && out[i]) inter++;
+    if (MASK[i] || out[i]) uni++;
+    if (MASK[i] !== out[i]) lost++;
+  }
+  $("poolIou").textContent = uni ? Math.round(100 * inter / uni) + "%" : "100%";
+  $("poolLost").textContent = lost;
+}
+$("poolK").addEventListener("input", updatePool);
+
+/* ================================================================
+   Demo 2 — kernel size vs params
+================================================================ */
+function updateKernel() {
+  const k = +$("kSize").value;
+  $("kSizeV").textContent = k + "×" + k;
+  $("kParams").textContent = (k * k).toLocaleString();
+  $("kRatio").textContent = "×" + (k * k / 9).toFixed(1);
+}
+$("kSize").addEventListener("input", updateKernel);
+
+/* ================================================================
+   Demo 3 — dilated kernel sampler
+================================================================ */
+let dilD = 1;
+function drawDil() {
+  const c = $("dilCanvas"), ctx = c.getContext("2d");
+  const N = 33, cell = c.width / N;
+  ctx.fillStyle = css("--surface2"); ctx.fillRect(0, 0, c.width, c.height);
+  ctx.strokeStyle = css("--grid"); ctx.lineWidth = 1;
+  for (let i = 0; i <= N; i++) {
+    ctx.beginPath(); ctx.moveTo(i * cell + .5, 0); ctx.lineTo(i * cell + .5, c.height); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i * cell + .5); ctx.lineTo(c.width, i * cell + .5); ctx.stroke();
+  }
+  const mid = (N - 1) / 2;
+  // effective extent shading
+  const keff = 3 + 2 * (dilD - 1);
+  ctx.fillStyle = css("--accent-soft");
+  ctx.fillRect((mid - (keff - 1) / 2) * cell, (mid - (keff - 1) / 2) * cell, keff * cell, keff * cell);
+  // center output pixel
+  ctx.fillStyle = css("--s1");
+  ctx.globalAlpha = .35;
+  ctx.fillRect(mid * cell, mid * cell, cell, cell);
+  ctx.globalAlpha = 1;
+  // sample points
+  ctx.fillStyle = css("--s2");
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const x = mid + dx * dilD, y = mid + dy * dilD;
+    ctx.beginPath();
+    ctx.arc((x + .5) * cell, (y + .5) * cell, cell * .32, 0, 7);
+    ctx.fill();
+  }
+  $("dilKeff").textContent = keff + "×" + keff;
+  $("dilArea").textContent = (keff * keff) + "칸 / " + (N * N) + "칸";
+}
+document.querySelectorAll(".dilBtn").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".dilBtn").forEach(x => x.classList.remove("on"));
+  b.classList.add("on");
+  dilD = +b.dataset.d;
+  drawDil();
+}));
+
+/* ================================================================
+   Receptive-field engine (shared by demos 4 & 8)
+   Backward contribution count: start with delta at output,
+   for each layer (reversed) spread by kernel offsets * dilation.
+================================================================ */
+function contributionMap(dilations, size) {
+  // dilations: array applied layer1..layerN (input->output). Backward pass order reversed.
+  let cur = new Float64Array(size * size);
+  const mid = (size - 1) >> 1;
+  cur[mid * size + mid] = 1;
+  const maps = [];
+  const rev = dilations.slice().reverse();
+  for (const d of rev) {
+    const nx = new Float64Array(size * size);
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+      const v = cur[y * size + x];
+      if (!v) continue;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const ny = y + dy * d, nxp = x + dx * d;
+        if (ny >= 0 && ny < size && nxp >= 0 && nxp < size) nx[ny * size + nxp] += v;
+      }
+    }
+    cur = nx;
+    maps.push(cur);
+  }
+  return { final: cur, maps };
+}
+
+function drawHeat(canvas, map, size, cellPx, markDil) {
+  canvas.width = size * cellPx; canvas.height = size * cellPx;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = css("--surface2"); ctx.fillRect(0, 0, canvas.width, canvas.height);
+  let max = 0;
+  for (const v of map) if (v > max) max = v;
+  const fg = hexToRgb(css("--s1"));
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const v = map[y * size + x];
+    if (!v) continue;
+    const a = 0.18 + 0.82 * Math.log1p(v) / Math.log1p(max);
+    ctx.fillStyle = `rgba(${fg[0]},${fg[1]},${fg[2]},${a.toFixed(3)})`;
+    ctx.fillRect(x * cellPx, y * cellPx, cellPx, cellPx);
+  }
+  if (cellPx >= 4) {
+    ctx.strokeStyle = css("--grid"); ctx.lineWidth = 1;
+    for (let i = 0; i <= size; i++) {
+      ctx.beginPath(); ctx.moveTo(i * cellPx + .5, 0); ctx.lineTo(i * cellPx + .5, canvas.height); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, i * cellPx + .5); ctx.lineTo(canvas.width, i * cellPx + .5); ctx.stroke();
+    }
+  }
+  if (markDil != null) {
+    const mid = (size - 1) >> 1;
+    ctx.fillStyle = css("--s2");
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const x = mid + dx * markDil, y = mid + dy * markDil;
+      ctx.beginPath();
+      ctx.arc((x + .5) * cellPx, (y + .5) * cellPx, Math.max(2, cellPx * .3), 0, 7);
+      ctx.fill();
+    }
+  }
+}
+
+/* ================================================================
+   Demo 4 — stacked receptive field (Figure 1)
+================================================================ */
+let rfDilated = true;
+function updateRF() {
+  const n = +$("rfLayers").value;
+  $("rfLayersV").textContent = n;
+  const dil = [];
+  for (let i = 0; i < n; i++) dil.push(rfDilated ? (1 << i) : 1);
+  const rf = rfDilated ? ((1 << (n + 1)) - 1) : (2 * n + 1);
+  const size = Math.min(rf + 4, 71) | 1;
+  const { maps } = contributionMap(dil, size);
+  const wrap = $("rfPanels");
+  wrap.innerHTML = "";
+  // show each cumulative layer (backward maps are in reverse layer order; maps[k] = contribution after unrolling k+1 last layers — for display we recompute per depth for clarity)
+  for (let depth = 1; depth <= n; depth++) {
+    const sub = dil.slice(0, depth);
+    const subRf = rfDilated ? ((1 << (depth + 1)) - 1) : (2 * depth + 1);
+    const subSize = Math.min(subRf + 4, 71) | 1;
+    const { final } = contributionMap(sub, subSize);
+    const div = document.createElement("div");
+    div.className = "panel";
+    const cv = document.createElement("canvas");
+    cv.className = "pix";
+    const cellPx = Math.max(3, Math.floor(150 / subSize));
+    drawHeat(cv, final, subSize, cellPx, sub[sub.length - 1]);
+    cv.style.width = Math.min(subSize * cellPx, 220) + "px";
+    div.appendChild(cv);
+    const cap = document.createElement("div");
+    cap.className = "cap";
+    cap.innerHTML = `층 ${depth} 통과 후<br>d=${sub[depth - 1]} · 수용 영역 ${subRf}×${subRf}`;
+    div.appendChild(cap);
+    wrap.appendChild(div);
+  }
+  $("rfSize").textContent = rf + "×" + rf;
+  $("rfParams").textContent = (9 * n) + " (3×3 × " + n + "층)";
+  const need = Math.ceil((rf - 1) / 2);
+  $("rfPlainNeed").textContent = rfDilated ? (need + "층 필요") : "-";
+}
+$("rfLayers").addEventListener("input", updateRF);
+$("rfModeDil").addEventListener("click", () => { rfDilated = true; $("rfModeDil").classList.add("on"); $("rfModePlain").classList.remove("on"); updateRF(); });
+$("rfModePlain").addEventListener("click", () => { rfDilated = false; $("rfModePlain").classList.add("on"); $("rfModeDil").classList.remove("on"); updateRF(); });
+
+/* ================================================================
+   Demo 5 — linear vs exponential bars
+================================================================ */
+function updateCmp() {
+  const n = +$("cmpLayers").value;
+  $("cmpLayersV").textContent = n;
+  const plain = 2 * n + 1;
+  const dil = (1 << (n + 1)) - 1;
+  const max = Math.max(dil, plain);
+  $("cmpBars").innerHTML = `
+    <div class="bar-row"><span>일반 3×3 ×${n}층 (선형)</span><div class="bar-track"><div class="bar-fill" style="width:${(100 * plain / max).toFixed(1)}%;background:var(--s3)"></div></div><span class="bar-val">${plain}</span></div>
+    <div class="bar-row"><span>dilated ×${n}층 (지수)</span><div class="bar-track"><div class="bar-fill acc" style="width:100%"></div></div><span class="bar-val">${dil}</span></div>`;
+}
+$("cmpLayers").addEventListener("input", updateCmp);
+
+/* ================================================================
+   Demo 6 — context module table
+================================================================ */
+const CTX_RF = ["3×3","5×5","9×9","17×17","33×33","65×65","67×67","67×67"];
+const CTX_BASIC = ["C","C","C","C","C","C","C","C"];
+const CTX_LARGE = ["2C","2C","4C","8C","16C","32C","32C","C"];
+function setCtx(large) {
+  $("ctxBasic").classList.toggle("on", !large);
+  $("ctxLarge").classList.toggle("on", large);
+  const cells = $("ctxCh").querySelectorAll("td:not(.rowhead)");
+  cells.forEach((td, i) => td.textContent = (large ? CTX_LARGE : CTX_BASIC)[i]);
+}
+$("ctxBasic").addEventListener("click", () => setCtx(false));
+$("ctxLarge").addEventListener("click", () => setCtx(true));
+// hover: highlight column & show RF
+const ctxTable = $("ctxTable");
+ctxTable.querySelectorAll("tr").forEach(tr => {
+  tr.querySelectorAll("td:not(.rowhead), th").forEach((cell, idx) => {
+    if (idx === 0) return;
+    cell.addEventListener("mouseenter", () => highlightCtx(idx));
+    cell.addEventListener("click", () => highlightCtx(idx));
+  });
+});
+function highlightCtx(col) {
+  ctxTable.querySelectorAll("td.hl").forEach(td => td.classList.remove("hl"));
+  ctxTable.querySelectorAll("tr").forEach(tr => {
+    const cells = tr.querySelectorAll("td:not(.rowhead)");
+    if (cells[col - 1]) cells[col - 1].classList.add("hl");
+  });
+  $("ctxHover").innerHTML = `층 ${col}까지의 수용 영역<b>${CTX_RF[col - 1]}</b>`;
+}
+
+/* ================================================================
+   Demo 7 — random vs identity init signal propagation
+================================================================ */
+let initMode = "rand", initSeed = 1;
+function mulberry(seed) {
+  return function () {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function drawInit() {
+  const c = $("initCanvas"), ctx = c.getContext("2d");
+  ctx.clearRect(0, 0, c.width, c.height);
+  const W = 128, L = 7;
+  // input: a clean structured signal (two plateaus + a bump)
+  const sig = new Float64Array(W);
+  for (let i = 0; i < W; i++) {
+    sig[i] = (i > 18 && i < 44 ? 1 : 0) + (i > 66 && i < 76 ? 0.6 : 0) + 0.9 * Math.exp(-((i - 100) ** 2) / 30);
+  }
+  const rnd = mulberry(initSeed);
+  const rows = [sig];
+  let cur = sig;
+  for (let l = 0; l < L; l++) {
+    let k;
+    if (initMode === "ident") k = [0, 1, 0];
+    else {
+      // He-style random 3-tap kernel
+      k = [rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1].map(v => v * Math.sqrt(2 / 3));
+    }
+    const nx = new Float64Array(W);
+    for (let i = 0; i < W; i++) {
+      let s = 0;
+      for (let t = -1; t <= 1; t++) {
+        const j = Math.min(W - 1, Math.max(0, i + t));
+        s += cur[j] * k[t + 1];
+      }
+      nx[i] = Math.max(0, s);   // ReLU truncation, like the paper's pointwise max(·,0)
+    }
+    rows.push(nx);
+    cur = nx;
+  }
+  // draw rows stacked
+  const rowH = c.height / (L + 1);
+  for (let r = 0; r < rows.length; r++) {
+    const data = rows[r];
+    let mx = 0;
+    for (const v of data) mx = Math.max(mx, Math.abs(v));
+    const norm = mx > 1e-9 ? mx : 1;
+    const y0 = r * rowH + rowH * 0.85;
+    ctx.strokeStyle = css("--line");
+    ctx.beginPath(); ctx.moveTo(0, r * rowH + .5); ctx.lineTo(c.width, r * rowH + .5); ctx.stroke();
+    ctx.strokeStyle = r === 0 ? css("--s1") : css("--s2");
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    for (let i = 0; i < W; i++) {
+      const x = i / (W - 1) * (c.width - 70) + 60;
+      const y = y0 - (data[i] / norm) * rowH * 0.7;
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+    ctx.stroke();
+    ctx.fillStyle = css("--muted");
+    ctx.font = "12px ui-monospace, monospace";
+    ctx.fillText(r === 0 ? "입력" : "층 " + r, 8, r * rowH + rowH * 0.55);
+    if (r > 0 && mx < 1e-9) {
+      ctx.fillStyle = css("--crit");
+      ctx.fillText("신호 사멸", c.width - 70, r * rowH + rowH * 0.55);
+    }
+  }
+}
+$("initRand").addEventListener("click", () => { initMode = "rand"; $("initRand").classList.add("on"); $("initIdent").classList.remove("on"); drawInit(); });
+$("initIdent").addEventListener("click", () => { initMode = "ident"; $("initIdent").classList.add("on"); $("initRand").classList.remove("on"); drawInit(); });
+$("initReroll").addEventListener("click", () => { initSeed = (initSeed * 16807 + 7) % 2147483647; drawInit(); });
+
+/* ================================================================
+   Demo 8 — gridding effect
+================================================================ */
+let gridDs = [1, 2, 4];
+function updateGrid() {
+  // receptive field of the stack
+  let rf = 1;
+  for (const d of gridDs) rf += 2 * d;
+  const size = (rf + 4) | 1;
+  const { final } = contributionMap(gridDs, size);
+  const c = $("gridCanvas");
+  const cellPx = Math.max(4, Math.floor(300 / size));
+  // draw heat + holes
+  c.width = size * cellPx; c.height = size * cellPx;
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = css("--surface2"); ctx.fillRect(0, 0, c.width, c.height);
+  let max = 0;
+  for (const v of final) if (v > max) max = v;
+  const fg = hexToRgb(css("--s1"));
+  const mid = (size - 1) >> 1, half = (rf - 1) / 2;
+  let covered = 0, holes = 0;
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const v = final[y * size + x];
+    const inRf = Math.abs(x - mid) <= half && Math.abs(y - mid) <= half;
+    if (v) {
+      covered++;
+      const a = 0.18 + 0.82 * Math.log1p(v) / Math.log1p(max);
+      ctx.fillStyle = `rgba(${fg[0]},${fg[1]},${fg[2]},${a.toFixed(3)})`;
+      ctx.fillRect(x * cellPx, y * cellPx, cellPx, cellPx);
+    } else if (inRf) {
+      holes++;
+      ctx.fillStyle = css("--muted");
+      ctx.globalAlpha = 0.35;
+      ctx.fillRect(x * cellPx, y * cellPx, cellPx, cellPx);
+      ctx.globalAlpha = 1;
+    }
+  }
+  ctx.strokeStyle = css("--grid");
+  for (let i = 0; i <= size; i++) {
+    ctx.beginPath(); ctx.moveTo(i * cellPx + .5, 0); ctx.lineTo(i * cellPx + .5, c.height); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i * cellPx + .5); ctx.lineTo(c.width, i * cellPx + .5); ctx.stroke();
+  }
+  // RF boundary
+  ctx.strokeStyle = css("--s2"); ctx.lineWidth = 2;
+  ctx.strokeRect((mid - half) * cellPx + 1, (mid - half) * cellPx + 1, rf * cellPx - 2, rf * cellPx - 2);
+  const inRfTotal = rf * rf;
+  $("gridCov").textContent = Math.round(100 * (inRfTotal - holes) / inRfTotal) + "%";
+  $("gridHoles").textContent = holes;
+  $("gridCap").textContent = "확장률 " + gridDs.join(", ") + " — " + (holes ? "회색 구멍 = 미참조 픽셀" : "구멍 없음");
+}
+document.querySelectorAll(".gridBtn").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".gridBtn").forEach(x => x.classList.remove("on"));
+  b.classList.add("on");
+  gridDs = b.dataset.ds.split(",").map(Number);
+  updateGrid();
+}));
+
+/* ================================================================
+   Result bars (static, animate on scroll)
+================================================================ */
+function fillBars() {
+  document.querySelectorAll(".bar-fill[data-w]").forEach(el => {
+    const w = +el.dataset.w, max = +el.dataset.max;
+    el.style.width = (100 * w / max).toFixed(1) + "%";
+  });
+}
+
+/* ================================================================
+   Quiz
+================================================================ */
+document.querySelectorAll(".quiz").forEach(qz => {
+  const ans = +qz.dataset.answer;
+  const btns = qz.querySelectorAll(".opts button");
+  btns.forEach((b, i) => b.addEventListener("click", () => {
+    btns.forEach(x => { x.disabled = true; });
+    btns[ans].classList.add("correct");
+    if (i !== ans) b.classList.add("wrong");
+    qz.querySelector(".expl").classList.add("show");
+  }));
+});
+
+/* ---------- init / redraw ---------- */
+function drawAll() {
+  updatePool(); updateKernel(); drawDil(); updateRF(); updateCmp(); drawInit(); updateGrid(); fillBars();
+}
+drawAll();
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawAll);
+</script>
+</body>
+</html>
