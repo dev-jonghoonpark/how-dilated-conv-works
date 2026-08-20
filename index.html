@@ -181,6 +181,18 @@ table.tbl td.hl { background: var(--accent-soft); color: var(--accent-ink); font
 .bar-fill.acc { background: var(--accent); }
 .bar-val { font-family: ui-monospace, Menlo, monospace; text-align: right; }
 @media (max-width: 560px) { .bar-row { grid-template-columns: 110px 1fr 48px; } }
+/* numeric feature map (demo 1) */
+.ngrid { display: grid; gap: 3px; }
+.ngrid .cell {
+  width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
+  font-family: ui-monospace, Menlo, monospace; font-size: .78rem; color: var(--ink2);
+  background: var(--surface2); border: 1px solid var(--line); border-radius: 5px;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.ngrid.out .cell { cursor: pointer; }
+.ngrid .cell.win { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.ngrid .cell.pick, .ngrid .cell.sel { background: var(--s2); border-color: var(--s2); color: #fff; font-weight: 700; }
+@media (max-width: 560px) { .ngrid .cell { width: 27px; height: 27px; font-size: .68rem; } }
 /* quiz */
 .quiz { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin: 18px 0; }
 .quiz .q { font-weight: 600; margin-bottom: 12px; }
@@ -218,21 +230,91 @@ Fisher Yu와 Vladlen Koltun은 커널을 키우지도, 해상도를 버리지도
 <div class="toc">
 <strong>차례</strong>
 <ol>
-<li><a href="#s1">문제 — 풀링은 밀집 예측의 정답을 지운다</a></li>
-<li><a href="#s2">기존 해법의 딜레마</a></li>
-<li><a href="#s3">발상 — 커널에 간격을 넣는다</a></li>
-<li><a href="#s4">수용 영역의 지수적 확장</a></li>
-<li><a href="#s5">컨텍스트 모듈 — 7층으로 255×255를 보는 설계</a></li>
-<li><a href="#s6">항등 초기화 — ResNet과 같은 논리</a></li>
-<li><a href="#s7">프런트엔드 단순화와 실험 결과</a></li>
-<li><a href="#s8">주의 — 격자 아티팩트(gridding effect)</a></li>
-<li><a href="#s9">정리 — 세 번 반복된 하나의 교훈</a></li>
-<li><a href="#s10">이해도 퀴즈</a></li>
+<li><a href="#s1">풀링(pooling)이란 무엇인가</a></li>
+<li><a href="#s2">문제 — 풀링은 밀집 예측의 정답을 지운다</a></li>
+<li><a href="#s3">기존 해법의 딜레마</a></li>
+<li><a href="#s4">발상 — 커널에 간격을 넣는다</a></li>
+<li><a href="#s5">수용 영역의 지수적 확장</a></li>
+<li><a href="#s6">컨텍스트 모듈 — 7층으로 255×255를 보는 설계</a></li>
+<li><a href="#s7">항등 초기화 — ResNet과 같은 논리</a></li>
+<li><a href="#s8">프런트엔드 단순화와 실험 결과</a></li>
+<li><a href="#s9">주의 — 격자 아티팩트(gridding effect)</a></li>
+<li><a href="#s10">정리 — 세 번 반복된 하나의 교훈</a></li>
+<li><a href="#s11">이해도 퀴즈</a></li>
 </ol>
 </div>
 
 <!-- ================================================================ -->
-<h2 id="s1">§1 문제 — 풀링은 밀집 예측의 정답을 지운다</h2>
+<h2 id="s1">§1 풀링(pooling)이란 무엇인가</h2>
+
+<p>
+이 페이지의 주인공인 확장 합성곱은 "풀링 없이 시야를 넓히는" 방법입니다.
+그러니 먼저 <strong>풀링이 무엇을 하는 연산인지</strong>부터 짚고 갑니다. 이미 아는 내용이면 §2로 건너뛰어도 됩니다.
+</p>
+
+<p>
+풀링은 CNN의 합성곱 층 사이에 끼어드는 <strong>다운샘플링(축소) 연산</strong>입니다.
+특징 맵을 작은 창(window)으로 잘라, <strong>각 창을 대표값 하나로 요약</strong>합니다.
+</p>
+<ul>
+<li><strong>맥스 풀링(max pooling)</strong> — 창 안의 최댓값을 남깁니다. "이 근방에 그 특징이 있었나?"만 기록하는 셈입니다. 가장 널리 쓰입니다.</li>
+<li><strong>평균 풀링(average pooling)</strong> — 창 안의 평균을 남깁니다. 값이 부드럽게 섞입니다.</li>
+</ul>
+<p>
+창 크기 <code>k</code>, 이동 간격(스트라이드) <code>s</code>로 훑을 때 출력 크기는 이렇게 정해집니다.
+합성곱과 달리 <strong>학습되는 가중치가 없습니다</strong> — 정해진 규칙(최댓값/평균)을 적용할 뿐입니다.
+</p>
+
+<pre><code>출력 크기  M = ⌊(N − k) / s⌋ + 1
+
+예) 2×2 창, 스트라이드 2  →  한 변이 절반, 픽셀 수는 1/4</code></pre>
+
+<div class="demo">
+<div class="demo-title">데모 1 · 풀링이 창 하나를 값 하나로 줄이는 과정</div>
+<div class="demo-sub">8×8 특징 맵에 풀링을 적용합니다. 오른쪽 출력 칸에 마우스를 올리면(또는 누르면) 그 값이 나온 왼쪽 창이 표시됩니다 — 맥스 풀링에서 주황색 칸이 실제로 살아남은 값입니다.</div>
+<div class="controls">
+  <button class="poolMode on" data-m="max">맥스 풀링</button>
+  <button class="poolMode" data-m="avg">평균 풀링</button>
+  <label>창 크기 <input type="range" id="pw" min="2" max="4" value="2" step="1"> <span class="readout" id="pwV">2×2</span></label>
+  <label>스트라이드 <input type="range" id="ps" min="1" max="4" value="2" step="1"> <span class="readout" id="psV">2</span></label>
+</div>
+<div class="panelrow">
+  <div class="panel">
+    <div class="ngrid" id="pIn"></div>
+    <div class="cap">입력 특징 맵 (8×8)</div>
+  </div>
+  <div class="panel">
+    <div class="ngrid out" id="pOut"></div>
+    <div class="cap">풀링 출력</div>
+  </div>
+</div>
+<div class="stats">
+  <div class="stat">출력 크기<b id="pShape">4×4</b></div>
+  <div class="stat">남은 값의 비율<b id="pKeep">25%</b></div>
+  <div class="stat hl">학습 파라미터<b>0개</b></div>
+</div>
+</div>
+
+<p>왜 이런 연산을 넣을까요? 분류망 입장에서는 세 가지를 한꺼번에 얻습니다.</p>
+<ul>
+<li><strong>연산량·메모리 절감</strong> — 2×2 풀링 한 번에 이후 층이 처리할 값이 1/4로 줄어듭니다.</li>
+<li><strong>작은 이동에 둔감해짐(translation invariance)</strong> — 고양이 귀가 한두 픽셀 움직여도 창의 최댓값은 그대로입니다. "무엇이 있는가"만 묻는 분류에서는 미덕입니다.</li>
+<li><strong>수용 영역 확대</strong> — 해상도가 절반이 되면, 다음 층의 같은 3×3 커널이 <em>원본 기준</em> 두 배 넓은 영역을 봅니다. 층을 쌓을수록 시야가 지수적으로 커지는 이유가 이것입니다.</li>
+</ul>
+
+<div class="note">
+핵심은 마지막 항목입니다. 풀링은 사실 <strong>시야를 넓히려고</strong> 쓰는 도구였습니다.
+그리고 그 대가로 해상도를 절반씩 내놓습니다 — 확장 합성곱은 바로 이 거래를 깨는 아이디어입니다.
+</div>
+
+<p>
+대신 풀링은 값 하나만 남기고 <strong>그 값이 창 안 어디에 있었는지</strong>는 버립니다.
+위 데모에서 주황색 칸의 <em>위치</em>는 출력 어디에도 기록되지 않습니다.
+"무엇이 있는가"만 남고 "어디에 있는가"는 사라지는 것 — 다음 절에서 볼 문제의 씨앗입니다.
+</p>
+
+<!-- ================================================================ -->
+<h2 id="s2">§2 문제 — 풀링은 밀집 예측의 정답을 지운다</h2>
 
 <p>
 컴퓨터 비전 과제는 출력의 밀도로 나눌 수 있습니다.
@@ -249,7 +331,7 @@ AlexNet·VGG 같은 분류망은 풀링과 스트라이드로 해상도를 단�
 </p>
 
 <div class="demo">
-<div class="demo-title">데모 1 · 풀링이 분할 마스크를 뭉개는 과정</div>
+<div class="demo-title">데모 2 · 풀링이 분할 마스크를 뭉개는 과정</div>
 <div class="demo-sub">64×64 정답 마스크를 2×2 맥스 풀링으로 k번 줄였다가 다시 원래 크기로 확대(nearest)했을 때 남는 것. 분류망 백본은 보통 5번(1/32)까지 줄입니다.</div>
 <div class="controls">
   <label>풀링 횟수 <input type="range" id="poolK" min="0" max="5" value="0" step="1"> <span class="readout" id="poolKv">0</span></label>
@@ -279,7 +361,7 @@ AlexNet·VGG 같은 분류망은 풀링과 스트라이드로 해상도를 단�
 </p>
 
 <!-- ================================================================ -->
-<h2 id="s2">§2 기존 해법의 딜레마</h2>
+<h2 id="s3">§3 기존 해법의 딜레마</h2>
 
 <p>넓은 시야(수용 영역)와 온전한 해상도를 동시에 얻는 기존 방법들은 각자 비용을 치릅니다.</p>
 
@@ -287,14 +369,14 @@ AlexNet·VGG 같은 분류망은 풀링과 스트라이드로 해상도를 단�
 <table class="tbl">
 <tr><th>방법</th><th>수용 영역</th><th>치르는 비용</th></tr>
 <tr><td class="rowhead">커널을 키운다</td><td>커널 크기만큼</td><td>파라미터 폭증 — 3×3은 9개, 15×15는 225개로 <b>25배</b></td></tr>
-<tr><td class="rowhead">풀링 + 층 쌓기</td><td>지수적으로 커짐</td><td>해상도 손실 — §1에서 본 그대로</td></tr>
+<tr><td class="rowhead">풀링 + 층 쌓기</td><td>지수적으로 커짐</td><td>해상도 손실 — §2에서 본 그대로</td></tr>
 <tr><td class="rowhead">일반 3×3만 쌓기</td><td>층당 +2 (<b>선형</b>)</td><td>255×255를 덮으려면 127층 필요</td></tr>
 <tr><td class="rowhead">이미지 여러 배율 입력</td><td>배율 수만큼</td><td>같은 이미지를 여러 번 처리 — 연산 중복, 설계 복잡</td></tr>
 </table>
 </div>
 
 <div class="demo">
-<div class="demo-title">데모 2 · 커널을 키우면 파라미터가 어떻게 늘어나는가</div>
+<div class="demo-title">데모 3 · 커널을 키우면 파라미터가 어떻게 늘어나는가</div>
 <div class="demo-sub">단일 층으로 k×k 시야를 얻으려 할 때의 파라미터 수 (채널 1 기준).</div>
 <div class="controls">
   <label>커널 크기 <input type="range" id="kSize" min="3" max="31" value="3" step="2"> <span class="readout" id="kSizeV">3×3</span></label>
@@ -312,7 +394,7 @@ AlexNet·VGG 같은 분류망은 풀링과 스트라이드로 해상도를 단�
 </p>
 
 <!-- ================================================================ -->
-<h2 id="s3">§3 발상 — 커널에 간격을 넣는다</h2>
+<h2 id="s4">§4 발상 — 커널에 간격을 넣는다</h2>
 
 <p>일반 합성곱과 확장 합성곱의 정의를 나란히 놓으면 차이는 문자 하나입니다.</p>
 
@@ -328,7 +410,7 @@ AlexNet·VGG 같은 분류망은 풀링과 스트라이드로 해상도를 단�
 <pre><code>k_eff = k + (k − 1)(d − 1)        예) 3×3, d=4  →  3 + 2·3 = 9×9 범위</code></pre>
 
 <div class="demo">
-<div class="demo-title">데모 3 · 확장률에 따라 커널이 읽는 위치</div>
+<div class="demo-title">데모 4 · 확장률에 따라 커널이 읽는 위치</div>
 <div class="demo-sub">주황 점이 3×3 커널의 9개 가중치가 실제로 읽는 입력 위치입니다. 확장률을 바꿔 보세요 — 점의 개수(파라미터)는 변하지 않고 간격만 벌어집니다.</div>
 <div class="controls">
   <span>확장률 d:</span>
@@ -359,7 +441,7 @@ AlexNet·VGG 같은 분류망은 풀링과 스트라이드로 해상도를 단�
 </div>
 
 <!-- ================================================================ -->
-<h2 id="s4">§4 수용 영역의 지수적 확장</h2>
+<h2 id="s5">§5 수용 영역의 지수적 확장</h2>
 
 <p>
 확장 합성곱 한 층은 그저 "듬성듬성 보는 층"일 뿐입니다. 진짜 마법은 <strong>쌓을 때</strong> 일어납니다.
@@ -373,7 +455,7 @@ AlexNet·VGG 같은 분류망은 풀링과 스트라이드로 해상도를 단�
 → 3×3, 7×7, 15×15, 31×31, 63×63, …</code></pre>
 
 <div class="demo">
-<div class="demo-title">데모 4 · 논문 Figure 1 재현 — 층을 쌓으며 수용 영역 관찰</div>
+<div class="demo-title">데모 5 · 논문 Figure 1 재현 — 층을 쌓으며 수용 영역 관찰</div>
 <div class="demo-sub">출력 중앙 픽셀 하나가 입력의 어느 위치를 몇 번 참조하는지(기여 횟수)를 역추적한 열지도입니다. 진할수록 여러 경로로 참조되는 위치. dilated / 일반(모두 d=1)을 전환해 비교해 보세요.</div>
 <div class="controls">
   <label>층 수 <input type="range" id="rfLayers" min="1" max="5" value="3" step="1"> <span class="readout" id="rfLayersV">3</span></label>
@@ -399,7 +481,7 @@ AlexNet·VGG 같은 분류망은 풀링과 스트라이드로 해상도를 단�
 </p>
 
 <div class="demo">
-<div class="demo-title">데모 5 · 선형 vs 지수 — 층 수에 따른 수용 영역</div>
+<div class="demo-title">데모 6 · 선형 vs 지수 — 층 수에 따른 수용 영역</div>
 <div class="demo-sub">같은 층 수에서 두 방식이 확보하는 수용 영역 한 변의 길이.</div>
 <div class="controls">
   <label>층 수 <input type="range" id="cmpLayers" min="1" max="8" value="4" step="1"> <span class="readout" id="cmpLayersV">4</span></label>
@@ -408,7 +490,7 @@ AlexNet·VGG 같은 분류망은 풀링과 스트라이드로 해상도를 단�
 </div>
 
 <!-- ================================================================ -->
-<h2 id="s5">§5 컨텍스트 모듈 — 7층으로 255×255를 보는 설계</h2>
+<h2 id="s6">§6 컨텍스트 모듈 — 7층으로 255×255를 보는 설계</h2>
 
 <p>
 논문의 제안은 이 원리를 담은 <strong>컨텍스트 모듈(context module)</strong>입니다.
@@ -418,7 +500,7 @@ C개의 특징 맵을 받아 C개를 그대로 내놓는 직육면체 모양의 
 </p>
 
 <div class="demo">
-<div class="demo-title">데모 6 · 컨텍스트 모듈 구조 (논문 Table 1)</div>
+<div class="demo-title">데모 7 · 컨텍스트 모듈 구조 (논문 Table 1)</div>
 <div class="demo-sub">층 카드에 마우스를 올리면(모바일: 탭) 해당 층까지의 수용 영역을 보여줍니다. Basic/Large는 채널 폭만 다릅니다.</div>
 <div class="controls">
   <button id="ctxBasic" class="on">Basic (모두 C채널)</button>
@@ -447,7 +529,7 @@ C개의 특징 맵을 받아 C개를 그대로 내놓는 직육면체 모양의 
 </p>
 
 <!-- ================================================================ -->
-<h2 id="s6">§6 항등 초기화 — ResNet과 같은 논리</h2>
+<h2 id="s7">§7 항등 초기화 — ResNet과 같은 논리</h2>
 
 <p>
 그런데 저자들이 이 모듈을 통상적인 무작위 초기화로 훈련하자 <strong>정확도가 오히려 떨어졌습니다.</strong>
@@ -457,7 +539,7 @@ C개의 특징 맵을 받아 C개를 그대로 내놓는 직육면체 모양의 
 <pre><code>k^b(t, a) = 1_[t=0] · 1_[a=b]     — 중앙 원소만 1, 자기 채널만 복사 (항등 초기화)</code></pre>
 
 <div class="demo">
-<div class="demo-title">데모 7 · 무작위 초기화 vs 항등 초기화 — 신호는 살아남는가</div>
+<div class="demo-title">데모 8 · 무작위 초기화 vs 항등 초기화 — 신호는 살아남는가</div>
 <div class="demo-sub">1차원 신호(파랑)가 7개 층을 통과한 결과입니다. 무작위 가중치는 층마다 신호를 왜곡하고, 항등 초기화는 그대로 통과시킵니다. "다시 굴리기"로 다른 난수를 시험해 보세요.</div>
 <div class="controls">
   <button id="initRand" class="on">무작위 초기화</button>
@@ -487,7 +569,7 @@ C개의 특징 맵을 받아 C개를 그대로 내놓는 직육면체 모양의 
 </div>
 
 <!-- ================================================================ -->
-<h2 id="s7">§7 프런트엔드 단순화와 실험 결과</h2>
+<h2 id="s8">§8 프런트엔드 단순화와 실험 결과</h2>
 
 <p>
 논문의 두 번째 기여는 덜 알려졌지만 똑같이 중요합니다.
@@ -526,7 +608,7 @@ C개의 특징 맵을 받아 C개를 그대로 내놓는 직육면체 모양의 
 </div>
 
 <!-- ================================================================ -->
-<h2 id="s8">§8 주의 — 격자 아티팩트(gridding effect)</h2>
+<h2 id="s9">§9 주의 — 격자 아티팩트(gridding effect)</h2>
 
 <p>
 확장률을 아무렇게나 쌓으면 안 됩니다. <strong>같은 확장률을 반복하면</strong> 커널이 계속 같은
@@ -534,7 +616,7 @@ C개의 특징 맵을 받아 C개를 그대로 내놓는 직육면체 모양의 
 </p>
 
 <div class="demo">
-<div class="demo-title">데모 8 · 확장률 조합에 따른 입력 커버리지</div>
+<div class="demo-title">데모 9 · 확장률 조합에 따른 입력 커버리지</div>
 <div class="demo-sub">3개 층을 통과한 출력 픽셀 하나의 기여 지도. 회색 = 수용 영역 안이지만 한 번도 참조되지 않는 구멍.</div>
 <div class="controls">
   <button class="gridBtn on" data-ds="1,2,4">d = 1, 2, 4 (논문 방식)</button>
@@ -557,7 +639,7 @@ C개의 특징 맵을 받아 C개를 그대로 내놓는 직육면체 모양의 
 </div>
 
 <!-- ================================================================ -->
-<h2 id="s9">§9 정리 — 세 번 반복된 하나의 교훈</h2>
+<h2 id="s10">§10 정리 — 세 번 반복된 하나의 교훈</h2>
 
 <div class="scrollx">
 <table class="tbl">
@@ -579,7 +661,7 @@ C개의 특징 맵을 받아 C개를 그대로 내놓는 직육면체 모양의 
 </p>
 
 <!-- ================================================================ -->
-<h2 id="s10">§10 이해도 퀴즈</h2>
+<h2 id="s11">§11 이해도 퀴즈</h2>
 
 <div class="quiz" data-answer="1">
 <div class="q">Q1. 확장률(dilation) d를 1에서 8로 올리면 3×3 커널의 파라미터 수는?</div>
@@ -633,7 +715,7 @@ C개의 특징 맵을 받아 C개를 그대로 내놓는 직육면체 모양의 
 <button>수용 영역 안에 한 번도 참조되지 않는 픽셀이 격자 무늬로 남는다 (gridding effect)</button>
 <button>기울기가 소실된다</button>
 </div>
-<div class="expl">커널이 항상 같은 간격의 위치만 읽으므로 그 사이 픽셀은 어떤 경로로도 출력에 기여하지 못합니다. 데모 8에서 본 회색 구멍이 그것입니다. 확장률을 1부터 배로 늘리거나(논문), 서로소 조합을 쓰면(HDC) 피할 수 있습니다.</div>
+<div class="expl">커널이 항상 같은 간격의 위치만 읽으므로 그 사이 픽셀은 어떤 경로로도 출력에 기여하지 못합니다. 데모 9에서 본 회색 구멍이 그것입니다. 확장률을 1부터 배로 늘리거나(논문), 서로소 조합을 쓰면(HDC) 피할 수 있습니다.</div>
 </div>
 
 <footer>
@@ -664,7 +746,75 @@ $("themeToggle").addEventListener("click", () => {
 });
 
 /* ================================================================
-   Demo 1 — pooling destroys a segmentation mask
+   Demo 1 — what pooling actually does (max / average over a window)
+================================================================ */
+// 8x8 feature map with a faint diagonal ridge, so max and average differ visibly
+const FMAP = [
+  [1, 0, 2, 1, 0, 1, 3, 0],
+  [0, 8, 1, 0, 2, 0, 1, 2],
+  [2, 1, 9, 1, 0, 3, 0, 1],
+  [1, 0, 1, 7, 2, 0, 2, 0],
+  [0, 2, 0, 1, 8, 1, 0, 3],
+  [3, 0, 1, 0, 1, 9, 2, 0],
+  [0, 1, 2, 1, 0, 1, 7, 1],
+  [1, 0, 0, 2, 1, 0, 1, 8],
+];
+let pMode = "max", pSel = 0;
+
+function poolWindows() {
+  const N = 8, k = +$("pw").value, s = +$("ps").value;
+  const M = Math.floor((N - k) / s) + 1, cells = [];
+  for (let oy = 0; oy < M; oy++) for (let ox = 0; ox < M; ox++) {
+    const idx = []; let best = -Infinity, argmax = 0, sum = 0;
+    for (let dy = 0; dy < k; dy++) for (let dx = 0; dx < k; dx++) {
+      const y = oy * s + dy, x = ox * s + dx, v = FMAP[y][x];
+      idx.push(y * N + x); sum += v;
+      if (v > best) { best = v; argmax = y * N + x; }
+    }
+    cells.push({ idx, max: best, argmax, avg: sum / idx.length });
+  }
+  return { N, M, cells };
+}
+
+function updatePoolDemo() {
+  const { N, M, cells } = poolWindows();
+  $("pwV").textContent = $("pw").value + "×" + $("pw").value;
+  $("psV").textContent = $("ps").value;
+  $("pShape").textContent = M + "×" + M;
+  $("pKeep").textContent = Math.round(100 * M * M / (N * N)) + "%";
+  if (pSel >= cells.length) pSel = 0;
+  const win = cells[pSel], inG = $("pIn"), outG = $("pOut");
+  inG.style.gridTemplateColumns = "repeat(" + N + ", auto)";
+  outG.style.gridTemplateColumns = "repeat(" + M + ", auto)";
+  inG.innerHTML = ""; outG.innerHTML = "";
+  for (let i = 0; i < N * N; i++) {
+    const d = document.createElement("div");
+    d.className = "cell";
+    d.textContent = FMAP[(i / N) | 0][i % N];
+    if (win.idx.includes(i)) d.classList.add(pMode === "max" && i === win.argmax ? "pick" : "win");
+    inG.appendChild(d);
+  }
+  cells.forEach((c, i) => {
+    const d = document.createElement("div");
+    d.className = "cell" + (i === pSel ? " sel" : "");
+    d.textContent = pMode === "max" ? c.max : c.avg.toFixed(1);
+    const pick = () => { if (pSel !== i) { pSel = i; updatePoolDemo(); } };
+    d.addEventListener("mouseenter", pick);
+    d.addEventListener("click", pick);
+    outG.appendChild(d);
+  });
+}
+document.querySelectorAll(".poolMode").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".poolMode").forEach(x => x.classList.remove("on"));
+  b.classList.add("on");
+  pMode = b.dataset.m;
+  updatePoolDemo();
+}));
+$("pw").addEventListener("input", updatePoolDemo);
+$("ps").addEventListener("input", updatePoolDemo);
+
+/* ================================================================
+   Demo 2 — pooling destroys a segmentation mask
 ================================================================ */
 // 64x64 cat-ish silhouette mask (body + head + ears + tail + legs)
 function makeMask() {
@@ -749,7 +899,7 @@ function updatePool() {
 $("poolK").addEventListener("input", updatePool);
 
 /* ================================================================
-   Demo 2 — kernel size vs params
+   Demo 3 — kernel size vs params
 ================================================================ */
 function updateKernel() {
   const k = +$("kSize").value;
@@ -760,7 +910,7 @@ function updateKernel() {
 $("kSize").addEventListener("input", updateKernel);
 
 /* ================================================================
-   Demo 3 — dilated kernel sampler
+   Demo 4 — dilated kernel sampler
 ================================================================ */
 let dilD = 1;
 function drawDil() {
@@ -801,7 +951,7 @@ document.querySelectorAll(".dilBtn").forEach(b => b.addEventListener("click", ()
 }));
 
 /* ================================================================
-   Receptive-field engine (shared by demos 4 & 8)
+   Receptive-field engine (shared by demos 5 & 9)
    Backward contribution count: start with delta at output,
    for each layer (reversed) spread by kernel offsets * dilation.
 ================================================================ */
@@ -862,7 +1012,7 @@ function drawHeat(canvas, map, size, cellPx, markDil) {
 }
 
 /* ================================================================
-   Demo 4 — stacked receptive field (Figure 1)
+   Demo 5 — stacked receptive field (Figure 1)
 ================================================================ */
 let rfDilated = true;
 function updateRF() {
@@ -905,7 +1055,7 @@ $("rfModeDil").addEventListener("click", () => { rfDilated = true; $("rfModeDil"
 $("rfModePlain").addEventListener("click", () => { rfDilated = false; $("rfModePlain").classList.add("on"); $("rfModeDil").classList.remove("on"); updateRF(); });
 
 /* ================================================================
-   Demo 5 — linear vs exponential bars
+   Demo 6 — linear vs exponential bars
 ================================================================ */
 function updateCmp() {
   const n = +$("cmpLayers").value;
@@ -920,7 +1070,7 @@ function updateCmp() {
 $("cmpLayers").addEventListener("input", updateCmp);
 
 /* ================================================================
-   Demo 6 — context module table
+   Demo 7 — context module table
 ================================================================ */
 const CTX_RF = ["3×3","5×5","9×9","17×17","33×33","65×65","67×67","67×67"];
 const CTX_BASIC = ["C","C","C","C","C","C","C","C"];
@@ -952,7 +1102,7 @@ function highlightCtx(col) {
 }
 
 /* ================================================================
-   Demo 7 — random vs identity init signal propagation
+   Demo 8 — random vs identity init signal propagation
 ================================================================ */
 let initMode = "rand", initSeed = 1;
 function mulberry(seed) {
@@ -1027,7 +1177,7 @@ $("initIdent").addEventListener("click", () => { initMode = "ident"; $("initIden
 $("initReroll").addEventListener("click", () => { initSeed = (initSeed * 16807 + 7) % 2147483647; drawInit(); });
 
 /* ================================================================
-   Demo 8 — gridding effect
+   Demo 9 — gridding effect
 ================================================================ */
 let gridDs = [1, 2, 4];
 function updateGrid() {
@@ -1109,7 +1259,7 @@ document.querySelectorAll(".quiz").forEach(qz => {
 
 /* ---------- init / redraw ---------- */
 function drawAll() {
-  updatePool(); updateKernel(); drawDil(); updateRF(); updateCmp(); drawInit(); updateGrid(); fillBars();
+  updatePoolDemo(); updatePool(); updateKernel(); drawDil(); updateRF(); updateCmp(); drawInit(); updateGrid(); fillBars();
 }
 drawAll();
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawAll);
